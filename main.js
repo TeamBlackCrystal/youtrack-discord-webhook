@@ -2,8 +2,25 @@
 const entities = require("@jetbrains/youtrack-scripting-api/entities");
 
 const CONFIG = require("./config");
-const {Payload} = require("./payload");
-const {Embed, Body, Author, Field, Footer} = require("./embed");
+const { Payload } = require("./payload");
+const { Embed, Body, Author, Field, Footer } = require("./embed");
+
+function send_embed(issue, payload, embed, body, ctx) {
+    body.description = issue.description;
+    body.url = issue.url;
+    body.setDateToNow();
+    embed.body = body;
+
+    const user = ctx.currentUser;
+    embed.author = new Author(user.visibleName, CONFIG.YOUTRACK_URL + "/users/" + user.login);
+
+    embed.footer = new Footer(CONFIG.SITE_NAME + " " + issue.project.name);
+
+    payload.addEmbed(embed);
+    payload.send(CONFIG.WEBHOOK_URL);
+
+    return;
+}
 
 const EVENTS = [
     {
@@ -23,10 +40,10 @@ const EVENTS = [
     {
         title: "Comment Added",
         newDescription: "$newValue",
-        customCheck: function(issue) {
+        customCheck: function (issue) {
             return issue.comments.isChanged;
         },
-        valueGetter: function(issue) {
+        valueGetter: function (issue) {
             if (issue.comments.added.size < 1) return "lmao i can't code";
             return issue.comments.added.get(0).text;
         }
@@ -53,21 +70,10 @@ exports.rule = entities.Issue.onChange({
             const embed = new Embed();
             const body = new Body();
 
-            body.title = "Issue " + issue.id + " Created";
-            body.description = issue.description;
-            body.url = issue.url;
+            body.title = "Issue " + issue.id + " が作成されました";
+            embed.fields = [{ 'name': '作成日', 'value': issue.created, 'inline': true }, { 'name': '作者', 'value': issue.reporter, 'inline': true }];
             body.color = CONFIG.COLOR_NEGATIVE;
-            body.setDateToNow();
-            embed.body = body;
-
-            const user = ctx.currentUser;
-            embed.author = new Author(user.visibleName, CONFIG.YOUTRACK_URL + "/users/" + user.login);
-
-            embed.footer = new Footer(CONFIG.SITE_NAME + " " + issue.project.name);
-
-            payload.addEmbed(embed);
-            payload.send(CONFIG.WEBHOOK_URL);
-
+            send_embed(issue, payload, embed, body, ctx);
             return;
         }
         else if (issue.becomesResolved) {
@@ -75,24 +81,21 @@ exports.rule = entities.Issue.onChange({
             const embed = new Embed();
             const body = new Body();
 
-            body.title = "Issue " + issue.id + " Resolved";
-            body.description = issue.description;
-            body.url = issue.url;
+            body.title = "Issue " + issue.id + " を解決しました";
             body.color = CONFIG.COLOR_POSITIVE;
-            body.setDateToNow();
-            embed.body = body;
-
-            const user = ctx.currentUser;
-            embed.author = new Author(user.visibleName, CONFIG.YOUTRACK_URL + "/users/" + user.login);
-
-            embed.footer = new Footer(CONFIG.SITE_NAME + " " + issue.project.name);
-
-            payload.addEmbed(embed);
-            payload.send(CONFIG.WEBHOOK_URL);
+            send_embed(issue, payload, embed, body, ctx);
 
             return;
         }
-        
+        else if (issue.becomesUnresolved) {
+            const payload = new Payload(null, CONFIG.SENDER_NAME, CONFIG.AVATAR_URL);
+            const embed = new Embed();
+            const body = new Body();
+            body.title = "Issue " + issue.id + " を再開しました";
+            body.color = CONFIG.COLOR_WARNING;
+            send_embed(issue, payload, embed, body, ctx);
+        }
+
         let changes = [];
         for (let i = 0; i < EVENTS.length; i++) {
             const event = EVENTS[i];
@@ -129,7 +132,7 @@ exports.rule = entities.Issue.onChange({
         const embed = new Embed();
 
         const body = new Body();
-        
+
         if (changeCount === 1) {
             const change = changes[0];
             body.title = change.title + " In " + issue.id;
